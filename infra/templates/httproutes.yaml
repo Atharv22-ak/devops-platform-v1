@@ -1,0 +1,126 @@
+{{- /*
+All external routes in one place. Gateway name/namespace/domain come from
+the single `gateway:` block in values.yaml; each route only adds a subdomain.
+*/}}
+{{- $gw := .Values.gateway }}
+{{- if .Values.frontend.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+  hostnames:
+    - {{ include "platform.host" (dict "sub" .Values.frontend.route.subdomain "root" $) | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Release.Name }}-frontend
+          port: {{ .Values.frontend.service.port }}
+---
+{{- end }}
+{{- if .Values.backend.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    app.kubernetes.io/name: backend
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+  hostnames:
+    - {{ include "platform.host" (dict "sub" .Values.backend.route.subdomain "root" $) | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.backend.route.path }}
+      backendRefs:
+        - name: {{ .Release.Name }}-backend
+          port: {{ .Values.backend.service.port }}
+---
+{{- end }}
+{{- if and .Values.elk.enabled .Values.elk.kibana.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "platform.kibana" . }}
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: kibana
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+  hostnames:
+    - {{ include "platform.host" (dict "sub" .Values.elk.kibana.route.subdomain "root" $) | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "platform.kibana" . }}
+          port: {{ .Values.elk.kibana.port }}
+---
+{{- end }}
+{{- if and .Values.monitoring.enabled .Values.monitoring.grafana.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-grafana
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+  hostnames:
+    - {{ include "platform.host" (dict "sub" .Values.monitoring.grafana.route.subdomain "root" $) | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Release.Name }}-grafana
+          port: 3000
+---
+{{- end }}
+{{- if and .Values.monitoring.enabled .Values.monitoring.prometheus.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "platform.prometheus" . }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw.name }}
+      namespace: {{ $gw.namespace }}
+  hostnames:
+    - {{ include "platform.host" (dict "sub" .Values.monitoring.prometheus.route.subdomain "root" $) | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "platform.prometheus" . }}
+          port: 9090
+---
+{{- end }}

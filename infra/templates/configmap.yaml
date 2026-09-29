@@ -1,0 +1,189 @@
+{{- /*
+Every non-secret environment variable of every component lives here.
+Change a value in values.yaml -> pods that use it restart automatically
+(they carry a checksum of this file as an annotation).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-backend-config
+  labels:
+    app.kubernetes.io/name: backend
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.backend.service.port | quote }}
+  MONGODB_URI: {{ printf "mongodb://%s:%v/%s" .Values.mongodb.name .Values.mongodb.service.port .Values.backend.dbName | quote }}
+  REDIS_URL: {{ printf "redis://%s:%v" .Values.redis.name .Values.redis.service.port | quote }}
+  {{- range $key, $value := .Values.backend.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- if .Values.elk.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-elasticsearch-config
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: elasticsearch
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.elk.elasticsearch.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-logstash-config
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: logstash
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.elk.logstash.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.logstash" . }}-pipeline
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: logstash
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+    output {
+      elasticsearch {
+        hosts => ["http://{{ include "platform.elasticsearch" . }}:{{ .Values.elk.elasticsearch.port }}"]
+        index => "{{ .Values.elk.logstash.indexPrefix }}-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-kibana-config
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: kibana
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  ELASTICSEARCH_HOSTS: {{ printf "http://%s:%v" (include "platform.elasticsearch" .) .Values.elk.elasticsearch.port | quote }}
+  {{- range $key, $value := .Values.elk.kibana.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- if .Values.monitoring.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-config
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  GF_SECURITY_ADMIN_USER: {{ .Values.monitoring.grafana.adminUser | quote }}
+  {{- range $key, $value := .Values.monitoring.grafana.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.elk.enabled .Values.filebeat.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-filebeat-config
+  labels:
+    app.kubernetes.io/name: filebeat
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  filebeat.yml: |
+    filebeat.autodiscover:
+      providers:
+        - type: kubernetes
+          node: ${NODE_NAME}
+          hints.enabled: true
+          hints.default_config:
+            type: container
+            paths:
+              - /var/log/containers/*${data.kubernetes.container.id}.log
+    output.logstash:
+      hosts: ["{{ include "platform.logstash" . }}:{{ .Values.elk.logstash.port }}"]
+{{- end }}
+{{- if .Values.monitoring.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.prometheus" . }}-config
+  labels:
+    app.kubernetes.io/name: prometheus
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: {{ .Values.monitoring.prometheus.scrapeInterval }}
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      # Node metrics from the node-exporter DaemonSet (one pod per node)
+      - job_name: node-exporter
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ["{{ .Release.Namespace }}"]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: node-exporter
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+
+      # Any pod annotated prometheus.io/scrape: "true" (optional prometheus.io/port, prometheus.io/path)
+      - job_name: annotated-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            regex: (.+)
+            target_label: __metrics_path__
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-datasources
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "platform.prometheus" . }}:9090
+        isDefault: true
+{{- end }}

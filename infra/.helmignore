@@ -1,0 +1,23 @@
+# Package files
+*.tgz
+*.pkg
+
+# Version control
+.git
+.gitignore
+
+# Cloud provider files
+.aws
+.azure
+.gcp
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+*.rst

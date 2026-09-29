@@ -1,0 +1,74 @@
+{{- if .Values.elk.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "platform.logstash" . }}
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: logstash
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.elk.logstash.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elk
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: logstash
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        app.kubernetes.io/name: elk
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: "docker.elastic.co/logstash/logstash:{{ .Values.elk.version }}"
+          ports:
+            - name: beats
+              containerPort: 5044
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-logstash-config
+          readinessProbe:
+            tcpSocket:
+              port: beats
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: beats
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.elk.logstash.resources | nindent 12 }}
+          volumeMounts:
+            - name: pipeline
+              mountPath: /usr/share/logstash/pipeline/logstash.conf
+              subPath: logstash.conf
+      volumes:
+        - name: pipeline
+          configMap:
+            name: {{ include "platform.logstash" . }}-pipeline
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "platform.logstash" . }}
+  labels:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/component: logstash
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: beats
+      port: {{ .Values.elk.logstash.port }}
+      targetPort: beats
+  selector:
+    app.kubernetes.io/name: elk
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: logstash
+{{- end }}

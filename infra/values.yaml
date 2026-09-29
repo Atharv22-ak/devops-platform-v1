@@ -1,0 +1,184 @@
+# DevOps Practice Platform - configuration.
+# One flat chart: every component is a file under templates/ and is
+# switched on/off and tuned from here.
+
+# ---------------------------------------------------------------------------
+# Gateway API - defined ONCE, used by every route in templates/httproutes.yaml
+# Each route below only picks its own subdomain: <subdomain>.<domain>
+# ---------------------------------------------------------------------------
+gateway:
+  name: my-gateway
+  namespace: default
+  domain: 3.108.88.140.nip.io
+  nodePort: 30505          # only used to print the URLs in the install notes
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+frontend:
+  replicaCount: 1
+  image:
+    repository: rwxatharv/resume-devops-frontend
+    tag: "v3"
+    pullPolicy: Always
+  service:
+    port: 80
+  route:
+    enabled: true
+    subdomain: frontend
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+backend:
+  replicaCount: 1
+  image:
+    repository: rwxatharv/resume-devops-backend
+    tag: "v2"
+    pullPolicy: Always
+  service:
+    port: 5000
+  route:
+    enabled: true
+    subdomain: api
+    path: /api
+  dbName: devops_platform
+  # Non-secret environment variables -> stored in the backend ConfigMap.
+  # (PORT, MONGODB_URI and REDIS_URL are derived automatically. JWT_SECRET is a Secret.)
+  env:
+    NODE_ENV: production
+    JWT_EXPIRES_IN: 7d
+    RATE_LIMIT_WINDOW_MS: "900000"
+    RATE_LIMIT_MAX: "100"
+    # CLIENT_URL: http://frontend.3.108.88.140.nip.io:30505   # restrict CORS to the frontend
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+# ---------------------------------------------------------------------------
+# Data stores
+# ---------------------------------------------------------------------------
+mongodb:
+  enabled: true
+  name: mongo-devops            # also the Service DNS name used by the backend
+  image:
+    repository: mongo
+    tag: "6.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 27017
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""        # empty = cluster default (local-path)
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+redis:
+  enabled: true
+  name: redis-devops            # also the Service DNS name used by the backend
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 128Mi }
+
+# ---------------------------------------------------------------------------
+# Logging: Elasticsearch + Logstash + Kibana, fed by Filebeat
+# ---------------------------------------------------------------------------
+elk:
+  enabled: true
+  version: "8.6.0"              # used for Elasticsearch, Logstash, Kibana and Filebeat images
+  elasticsearch:
+    replicas: 1
+    port: 9200
+    storage: 10Gi
+    # Environment -> Elasticsearch ConfigMap
+    env:
+      cluster.name: devops-practice-es
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      xpack.security.enabled: "false"
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: 1000m, memory: 2Gi }
+  logstash:
+    replicas: 1
+    port: 5044
+    indexPrefix: devops-logs    # indices become <indexPrefix>-YYYY.MM.dd
+    env:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { cpu: 500m, memory: 1Gi }
+  kibana:
+    replicas: 1
+    port: 5601
+    route:
+      enabled: true
+      subdomain: kibana
+    env:
+      SERVER_NAME: kibana
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { cpu: 500m, memory: 1Gi }
+
+# Ships every node's container logs to Logstash (needs elk.enabled).
+filebeat:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 100Mi }
+    limits:   { cpu: 200m, memory: 200Mi }
+
+# ---------------------------------------------------------------------------
+# Metrics: Prometheus + node-exporter + Grafana
+# ---------------------------------------------------------------------------
+monitoring:
+  enabled: false
+  prometheus:
+    image:
+      repository: prom/prometheus
+      tag: v2.53.0
+    scrapeInterval: 30s
+    retention: 15d
+    route:
+      enabled: false            # Prometheus has no login - expose only if you need to
+      subdomain: prometheus
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClassName: ""
+    resources:
+      requests: { cpu: 250m, memory: 400Mi }
+      limits:   { cpu: 500m, memory: 1Gi }
+  nodeExporter:
+    image:
+      repository: prom/node-exporter
+      tag: v1.8.1
+    resources:
+      requests: { cpu: 50m, memory: 32Mi }
+      limits:   { cpu: 200m, memory: 100Mi }
+  grafana:
+    image:
+      repository: grafana/grafana
+      tag: "10.4.5"
+    adminUser: admin            # password is generated into a Secret (see install notes)
+    route:
+      enabled: true
+      subdomain: grafana
+    # Environment -> Grafana ConfigMap
+    env:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClassName: ""
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
