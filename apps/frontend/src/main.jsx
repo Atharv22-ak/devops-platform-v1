@@ -6,6 +6,7 @@ import { ThemeProvider, CssBaseline } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
 import theme from './theme';
 import App from './App';
+import { AuthProvider } from './context/AuthContext';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -26,7 +27,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <CssBaseline />
         <SnackbarProvider maxSnack={3}>
           <BrowserRouter>
-            <App />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
           </BrowserRouter>
         </SnackbarProvider>
       </ThemeProvider>

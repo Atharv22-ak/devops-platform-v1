@@ -12,10 +12,16 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
+const config = require('./config/env');
+const seedAdmin = require('./utils/seedAdmin');
+const { authenticateToken } = require('./middleware/auth');
 
 // Initialize express app
 const app = express();
 const server = http.createServer(app);
+
+// Behind the gateway + frontend nginx, so use X-Forwarded-For for the client IP
+app.set('trust proxy', Number(process.env.TRUST_PROXY || 2));
 const io = socketIo(server, {
   cors: {
     origin: process.env.CLIENT_URL || '*',
@@ -41,18 +47,33 @@ app.use(mongoSanitize());
 app.use(xss());
 app.use(hpp());
 
-// Rate limiting
+// Rate limiting (limits come from RATE_LIMIT_WINDOW_MS / RATE_LIMIT_MAX)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimitWindowMs,
+  max: config.rateLimitMax,
   message: {
     success: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes'
+    message: 'Too many requests, please try again later'
   },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use('/api/', limiter);
+
+// Brute-force protection: only FAILED logins/signups count, per IP + email
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.email || '').toLowerCase()}`,
+  message: {
+    success: false,
+    message: 'Too many failed attempts, please try again in 15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(['/api/auth/login', '/api/auth/signup'], authLimiter);
 
 // Logging middleware
 app.use(morgan('combined'));
@@ -62,8 +83,9 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => {
+.then(async () => {
   console.log('MongoDB connected successfully');
+  await seedAdmin();
 })
 .catch((err) => {
   console.error('MongoDB connection error:', err);
@@ -106,10 +128,11 @@ const settingsRoutes = require('./routes/settings');
 // API routes
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/services', servicesRoutes);
-app.use('/api/monitoring', monitoringRoutes);
-app.use('/api/logs', logsRoutes);
-app.use('/api/settings', settingsRoutes);
+// Everything below needs a valid login token
+app.use('/api/services', authenticateToken, servicesRoutes);
+app.use('/api/monitoring', authenticateToken, monitoringRoutes);
+app.use('/api/logs', authenticateToken, logsRoutes);
+app.use('/api/settings', authenticateToken, settingsRoutes);
 
 // Health check endpoint (public)
 app.get('/health', (req, res) => {

@@ -19,7 +19,7 @@ frontend:
   replicaCount: 1
   image:
     repository: rwxatharv/dp-frontend
-    tag: "v5"
+    tag: "v6"
     pullPolicy: Always
   service:
     port: 80
@@ -34,7 +34,7 @@ backend:
   replicaCount: 1
   image:
     repository: rwxatharv/dp-backend
-    tag: "v4"
+    tag: "v6"
     pullPolicy: Always
   service:
     port: 5000
@@ -49,7 +49,11 @@ backend:
     NODE_ENV: production
     JWT_EXPIRES_IN: 7d
     RATE_LIMIT_WINDOW_MS: "900000"
-    RATE_LIMIT_MAX: "100"
+    RATE_LIMIT_MAX: "1000"   # the dashboard polls every few seconds, 100 was too low
+    # First admin account - created only when the users collection is empty.
+    # Change ADMIN_PASSWORD before the first install (or add users from the Users page).
+    ADMIN_EMAIL: admin@example.com
+    ADMIN_PASSWORD: Admin@123
     # CLIENT_URL: http://frontend.3.108.88.140.nip.io:30505   # restrict CORS to the frontend
   resources:
     requests: { cpu: 250m, memory: 256Mi }
