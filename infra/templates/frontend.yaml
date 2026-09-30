@@ -32,6 +32,11 @@ spec:
             httpGet:
               path: /
               port: http
+          env:
+            - name: BACKEND_HOST
+              value: {{ .Release.Name }}-backend
+            - name: BACKEND_PORT
+              value: "5000"
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
 ---

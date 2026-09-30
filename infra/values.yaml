@@ -18,8 +18,8 @@ gateway:
 frontend:
   replicaCount: 1
   image:
-    repository: rwxatharv/resume-devops-frontend
-    tag: "v3"
+    repository: rwxatharv/dp-frontend
+    tag: "v5"
     pullPolicy: Always
   service:
     port: 80
@@ -33,8 +33,8 @@ frontend:
 backend:
   replicaCount: 1
   image:
-    repository: rwxatharv/resume-devops-backend
-    tag: "v2"
+    repository: rwxatharv/dp-backend
+    tag: "v4"
     pullPolicy: Always
   service:
     port: 5000

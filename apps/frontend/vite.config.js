@@ -27,12 +27,12 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://backend:5000',
+        target: process.env.VITE_BACKEND_URL || 'http://backend:5000',
         changeOrigin: true,
         secure: false
       },
       '/ws': {
-        target: 'ws://backend:5000',
+        target: process.env.VITE_BACKEND_WS_URL || 'ws://backend:5000',
         ws: true
       }
     }
