@@ -25,11 +25,12 @@ RUN rm -rf /usr/share/nginx/html/*
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copy nginx configuration as a template (rendered at container start)
+COPY nginx.conf /etc/nginx/nginx.conf.template
 
 # Expose port
 EXPOSE 80
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Render the template at start. Only BACKEND_HOST / BACKEND_PORT are substituted,
+# so nginx's own variables ($host, $uri, $scheme, ...) are left untouched.
+CMD ["sh", "-c", "envsubst '${BACKEND_HOST} ${BACKEND_PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
