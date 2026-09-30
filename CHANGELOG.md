@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Added
+- Login / sign-up page; every page except `/login` now requires a signed-in user
+- Users are stored in MongoDB (they survive pod restarts); first admin is seeded from `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+- Admin-only Users page (list, add, delete) and JWT protection on `/api/services|monitoring|logs|settings`
+- New sidebar layout and refreshed theme
+
+### Fixed
+- Frontend CrashLoopBackOff: nginx upstream came from a stale image; `envsubst` now only substitutes `BACKEND_HOST` / `BACKEND_PORT`
+- Rate limit now read from `RATE_LIMIT_MAX` (was hard-coded to 100) and failed logins are limited per IP + email
+
 - Initial release of DevOps Practice Platform
 - Comprehensive frontend with React/Vite and Material-UI
 - Backend API with Node.js/Express and MongoDB

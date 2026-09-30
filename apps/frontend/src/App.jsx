@@ -1,65 +1,60 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { Container, CssBaseline, Typography, Box } from '@mui/material';
-import Header from './components/Header';
-import Footer from './components/Footer';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Box, CircularProgress } from '@mui/material';
+import Layout from './components/Layout';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Services from './pages/Services';
 import Monitoring from './pages/Monitoring';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
+import Users from './pages/Users';
 import NotFound from './pages/NotFound';
-import { useQuery } from '@tanstack/react-query';
-import { useSnackbar } from 'notistack';
-import axios from 'axios';
+import { useAuth } from './context/AuthContext';
+
+const Splash = () => (
+  <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+    <CircularProgress />
+  </Box>
+);
+
+// Everything except /login needs a signed-in user
+const RequireAuth = ({ children }) => {
+  const { user, initializing } = useAuth();
+  const location = useLocation();
+  if (initializing) return <Splash />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  return children;
+};
+
+const RequireAdmin = ({ children }) => {
+  const { isAdmin } = useAuth();
+  return isAdmin ? children : <Navigate to="/" replace />;
+};
 
 function App() {
-  const { enqueueSnackbar } = useSnackbar();
-
-  // Health check for backend API
-  const { data: backendStatus, isLoading, isError } = useQuery({
-    queryKey: ['backendStatus'],
-    queryFn: async () => {
-      const response = await axios.get('/api/health');
-      return response.data;
-    },
-    refetchInterval: 30000, // 30 seconds
-    retry: false,
-  });
-
-  // Show connection status
-  React.useEffect(() => {
-    if (!isLoading && !isError && backendStatus) {
-      enqueueSnackbar(`Backend connected: ${backendStatus.status}`, {
-        variant: 'success',
-        autoHideDuration: 3000,
-      });
-    } else if (isError) {
-      enqueueSnackbar('Backend connection failed', {
-        variant: 'error',
-        autoHideDuration: 5000,
-      });
-    }
-  }, [isLoading, isError, backendStatus, enqueueSnackbar]);
+  const { initializing } = useAuth();
+  if (initializing) return <Splash />;
 
   return (
-    <>
-      <CssBaseline />
-      <Header backendStatus={backendStatus} isLoading={isLoading} isError={isError} />
-      <Box sx={{ minHeight: 'calc(100vh - 64px - 64px)' }}>
-        <Container maxWidth="lg">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/services" element={<Services />} />
-            <Route path="/monitoring" element={<Monitoring />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Container>
-      </Box>
-      <Footer />
-    </>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        element={
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        }
+      >
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/services" element={<Services />} />
+        <Route path="/monitoring" element={<Monitoring />} />
+        <Route path="/logs" element={<Logs />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/users" element={<RequireAdmin><Users /></RequireAdmin>} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
   );
 }
 
